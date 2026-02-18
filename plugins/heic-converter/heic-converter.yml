@@ -1,0 +1,17 @@
+name: HEIC to JPEG Converter
+description: Scans library paths for HEIC/HEIF files and converts them to full quality JPEG using ImageMagick. Since Stash does not natively support HEIC files, this plugin operates at the filesystem level.
+version: 1.0.0
+url: https://github.com/adampetrovic/stash-plugins
+exec:
+  - python3
+  - "{pluginDir}/heic_converter.py"
+interface: raw
+tasks:
+  - name: Convert HEIC to JPEG
+    description: Find all HEIC/HEIF files in library paths and convert them to full quality JPEG. Originals are deleted after successful conversion. Run a Stash scan afterwards to index the new files.
+    defaultArgs:
+      mode: convert
+  - name: Dry Run - Scan for HEIC files
+    description: List all HEIC/HEIF files found in library paths without converting them.
+    defaultArgs:
+      mode: scan
