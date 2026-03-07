@@ -142,6 +142,8 @@ class TestIsNoise:
     def test_short_words(self):
         assert is_noise("ab")
         assert is_noise("x")
+        assert is_noise("tHa")
+        assert is_noise("abc")
 
     def test_timestamps(self):
         assert is_noise("12:00")

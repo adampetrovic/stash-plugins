@@ -42,7 +42,7 @@ PROCESSED_TAG = "auto:ocr"
 QUEUE_TAG = "ocr:queue"
 USERNAME_MARKER = "Extracted Username:"
 NUM_FRAMES = 5
-MIN_USERNAME_LEN = 3
+MIN_USERNAME_LEN = 4
 MAX_USERNAME_LEN = 30
 
 # Platform display names (must match Stash studio names exactly)
@@ -580,7 +580,7 @@ def detect_platforms_in_text(text):
         stripped = line.strip()
         if not stripped:
             continue
-        at_match = re.search(r"@\s{0,2}[\w.]{3,30}", stripped)
+        at_match = re.search(r"@\s{0,2}[\w.]{4,30}", stripped)
         if at_match:
             # Count non-@ words on the same line
             other_words = re.sub(r"@\s{0,2}[\w.]+", "", stripped).split()
@@ -649,7 +649,7 @@ def find_usernames_in_text(text):
     candidates = []
 
     # --- @username anywhere (TikTok + Instagram @mentions) ---
-    for match in re.finditer(r"@\s{0,2}([\w.]{3,30})", text):
+    for match in re.finditer(r"@\s{0,2}([\w.]{4,30})", text):
         clean = normalize_username(match.group(1))
         if clean and not is_noise(clean):
             candidates.append((clean, 10))
@@ -659,7 +659,7 @@ def find_usernames_in_text(text):
     for i, line in enumerate(lines):
         if re.search(r"tik\s*tok", line, re.IGNORECASE):
             block = "\n".join(lines[i : i + 3])
-            for m in re.finditer(r"@\s{0,2}([\w.]{3,30})", block):
+            for m in re.finditer(r"@\s{0,2}([\w.]{4,30})", block):
                 clean = normalize_username(m.group(1))
                 if clean and not is_noise(clean):
                     candidates.append((clean, 15))
