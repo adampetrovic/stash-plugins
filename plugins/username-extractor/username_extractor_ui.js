@@ -3,6 +3,9 @@
 
   const PLUGIN_ID = "username-extractor";
   const BUTTON_ID = "username-extractor-btn";
+  const PROCESSED_TAG = "auto:ocr";
+  const POLL_INTERVAL_MS = 2000;
+  const POLL_TIMEOUT_MS = 120000;
 
   // ---------------------------------------------------------------------------
   // GraphQL helper
@@ -23,6 +26,32 @@
       }`,
       { plugin_id: PLUGIN_ID, task_name: taskName, args_map: argsMap }
     );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Polling — wait for the auto:ocr tag to appear on the scene/image
+  // ---------------------------------------------------------------------------
+  async function hasProcessedTag(type, id) {
+    const query =
+      type === "scene"
+        ? `query($id: ID!) { findScene(id: $id) { tags { name } } }`
+        : `query($id: ID!) { findImage(id: $id) { tags { name } } }`;
+    const res = await gql(query, { id: id });
+    const item =
+      type === "scene" ? res?.data?.findScene : res?.data?.findImage;
+    if (!item) return false;
+    return (item.tags || []).some(
+      (t) => t.name.toLowerCase() === PROCESSED_TAG
+    );
+  }
+
+  async function pollUntilProcessed(type, id) {
+    const start = Date.now();
+    while (Date.now() - start < POLL_TIMEOUT_MS) {
+      await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
+      if (await hasProcessedTag(type, id)) return true;
+    }
+    return false;
   }
 
   // ---------------------------------------------------------------------------
@@ -48,7 +77,6 @@
     btn.className = "btn btn-secondary minimal";
     btn.title = "Extract username via OCR";
 
-    // Magnifying glass SVG icon matching Stash's icon style
     const ICON_DEFAULT =
       '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:1em;height:1em"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="8" y1="11" x2="14" y2="11"/><line x1="11" y1="8" x2="11" y2="14"/></svg>';
     const ICON_SPIN =
@@ -64,7 +92,8 @@
     if (!document.getElementById("username-extractor-style")) {
       const style = document.createElement("style");
       style.id = "username-extractor-style";
-      style.textContent = "@keyframes spin{from{transform:rotate(0)}to{transform:rotate(360deg)}}";
+      style.textContent =
+        "@keyframes spin{from{transform:rotate(0)}to{transform:rotate(360deg)}}";
       document.head.appendChild(style);
     }
 
@@ -73,6 +102,7 @@
       e.stopPropagation();
       btn.disabled = true;
       btn.innerHTML = ICON_SPIN;
+      btn.title = "Extracting username…";
 
       try {
         const taskName =
@@ -89,17 +119,27 @@
           btn.innerHTML = ICON_ERR;
           btn.title = result.errors[0]?.message || "Error";
           console.error("[username-extractor]", result.errors);
-          setTimeout(() => reset(), 4000);
-        } else {
+          setTimeout(() => reset(), 5000);
+          return;
+        }
+
+        // Task was queued — poll until the auto:ocr tag appears
+        const done = await pollUntilProcessed(type, id);
+
+        if (done) {
           btn.innerHTML = ICON_OK;
           btn.title = "Done — reloading…";
-          setTimeout(() => location.reload(), 1500);
+          setTimeout(() => location.reload(), 1000);
+        } else {
+          btn.innerHTML = ICON_ERR;
+          btn.title = "Timed out waiting for results";
+          setTimeout(() => reset(), 5000);
         }
       } catch (err) {
         btn.innerHTML = ICON_ERR;
         btn.title = String(err);
         console.error("[username-extractor]", err);
-        setTimeout(() => reset(), 4000);
+        setTimeout(() => reset(), 5000);
       }
 
       function reset() {
@@ -125,7 +165,6 @@
     const type = sceneId ? "scene" : "image";
     const id = sceneId || imageId;
 
-    // Try selectors for the scene/image detail action bar
     const selectors = [
       ".detail-container .detail-header .btn-group",
       ".detail-container .detail-header-group .btn-group",
