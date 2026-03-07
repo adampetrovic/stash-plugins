@@ -159,7 +159,6 @@ def find_or_create_tag(connection, tag_name):
     query FindTags($filter: FindFilterType, $tag_filter: TagFilterType) {
         findTags(filter: $filter, tag_filter: $tag_filter) {
             tags { id name }
-                performers { id name }
         }
     }
     """
