@@ -550,16 +550,45 @@ def detect_platforms_in_text(text):
     Detect platform indicators in OCR text.
 
     Returns a Counter mapping platform display names to confidence scores.
+
+    Detection heuristics:
+      TikTok:
+        - "TikTok" / "Tik Tok" text (from logo OCR)
+        - @username as a standalone watermark (on its own line or with
+          minimal surrounding text).  TikTok always overlays @username;
+          Instagram never does for the primary poster.
+      Instagram:
+        - Live-badge keywords in multiple languages
+        - Weaker UI-text signals (entrou, seguidores, …)
+        - Standalone username WITHOUT @ prefix (Instagram Live style)
     """
     scores = collections.Counter()
     lower = text.lower()
+    lines = text.split("\n")
 
-    # --- TikTok ---
+    # --- TikTok: explicit keyword ---
     if re.search(r"tik\s*tok", lower):
         scores[PLATFORM_TIKTOK] += 10
 
-    # --- Instagram ---
-    # Live badges in various languages
+    # --- TikTok: @username as standalone watermark ---
+    # TikTok watermarks show @username on its own line (or with just the
+    # TikTok logo text).  If an @username appears on a line with ≤2 other
+    # words, it's likely a TikTok-style watermark rather than an Instagram
+    # caption mention.
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            continue
+        at_match = re.search(r"@\s{0,2}[\w.]{3,30}", stripped)
+        if at_match:
+            # Count non-@ words on the same line
+            other_words = re.sub(r"@\s{0,2}[\w.]+", "", stripped).split()
+            other_words = [w for w in other_words if len(w) > 1]
+            if len(other_words) <= 2:
+                # Standalone @username → TikTok watermark
+                scores[PLATFORM_TIKTOK] += 5
+
+    # --- Instagram: Live badge keywords (strong) ---
     ig_keywords = [
         "ao vivo", "in diretta", "en vivo", "en direct",
     ]
@@ -567,7 +596,7 @@ def detect_platforms_in_text(text):
         if kw in lower:
             scores[PLATFORM_INSTAGRAM] += 10
 
-    # Weaker Instagram signals (need multiple to be confident)
+    # --- Instagram: weaker UI signals (need multiple) ---
     ig_weak = ["entrou", "seguidores", "seguindo", "curtir"]
     for kw in ig_weak:
         if kw in lower:

@@ -26,6 +26,24 @@ class TestTikTokDetection:
         scores = detect_platforms_in_text(text)
         assert scores[PLATFORM_TIKTOK] >= 10
 
+    def test_standalone_at_username_implies_tiktok(self):
+        """A standalone @username on its own line is a TikTok watermark."""
+        scores = detect_platforms_in_text("@kaylenmorgan\n")
+        assert scores[PLATFORM_TIKTOK] >= 5
+
+    def test_at_username_with_logo_text(self):
+        """@username on a line with just 'ob' (garbled logo) still counts."""
+        scores = detect_platforms_in_text("ob TikTok\n\n@jazmynmajors\n")
+        assert scores[PLATFORM_TIKTOK] >= 15  # keyword(10) + standalone @(5)
+
+    def test_at_username_in_sentence_weak(self):
+        """@username inside a full sentence scores lower — could be IG caption."""
+        scores = detect_platforms_in_text(
+            "@gipson_tegan always enjoying our time together"
+        )
+        # Line has many other words, so standalone heuristic should NOT fire
+        assert scores.get(PLATFORM_TIKTOK, 0) == 0
+
     def test_no_tiktok_in_random_text(self):
         scores = detect_platforms_in_text("hello world some random text")
         assert scores.get(PLATFORM_TIKTOK, 0) == 0
