@@ -184,12 +184,17 @@ class TestNormalizeUsername:
         assert normalize_username("user123...") == "user123"
         assert normalize_username("user!?") == "user"
 
-    def test_strip_leading_dots_underscores(self):
-        assert normalize_username("._user") == "user"
+    def test_strip_leading_dots(self):
         assert normalize_username("..user") == "user"
+        assert normalize_username(".user") == "user"
+
+    def test_preserves_leading_underscore(self):
+        """Leading underscores are valid (e.g. _username)."""
+        assert normalize_username("@_username") == "_username"
+        assert normalize_username("_user_name") == "_user_name"
 
     def test_preserves_trailing_underscore(self):
-        """Trailing underscores are valid username chars (e.g. kaylenmorgan_)."""
+        """Trailing underscores are valid (e.g. kaylenmorgan_)."""
         assert normalize_username("@kaylenmorgan_") == "kaylenmorgan_"
         assert normalize_username("user_") == "user_"
 

@@ -633,9 +633,9 @@ def normalize_username(raw):
     """Clean up a raw OCR-extracted username string."""
     u = raw.lstrip("@").strip()
     u = re.sub(r"[.,;:!?]+$", "", u)
-    # Only strip leading dots/underscores (OCR noise).
-    # Trailing underscores are valid username chars (e.g. kaylenmorgan_).
-    u = u.lstrip("._")
+    # Only strip leading dots — OCR artifact.
+    # Leading/trailing underscores are valid (e.g. _username, kaylenmorgan_).
+    u = u.lstrip(".")
     return u
 
 
