@@ -39,6 +39,7 @@ import urllib.request
 # ---------------------------------------------------------------------------
 
 PROCESSED_TAG = "auto:ocr"
+QUEUE_TAG = "ocr:queue"
 USERNAME_MARKER = "Extracted Username:"
 NUM_FRAMES = 5
 MIN_USERNAME_LEN = 3
@@ -158,6 +159,7 @@ def find_or_create_tag(connection, tag_name):
     query FindTags($filter: FindFilterType, $tag_filter: TagFilterType) {
         findTags(filter: $filter, tag_filter: $tag_filter) {
             tags { id name }
+                performers { id name }
         }
     }
     """
@@ -212,6 +214,72 @@ def find_or_create_studio(connection, studio_name):
     return studio_id
 
 
+def find_scenes_by_tag(connection, tag_id, page=1, per_page=100):
+    """Find scenes tagged with a specific tag."""
+    query = """
+    query FindScenes($filter: FindFilterType, $scene_filter: SceneFilterType) {
+        findScenes(filter: $filter, scene_filter: $scene_filter) {
+            count
+            scenes {
+                id
+                title
+                details
+                files { path duration }
+                studio { id name }
+                tags { id name }
+                performers { id name }
+            }
+        }
+    }
+    """
+    variables = {
+        "filter": {"page": page, "per_page": per_page},
+        "scene_filter": {
+            "tags": {
+                "value": [tag_id],
+                "modifier": "INCLUDES",
+                "depth": 0,
+            }
+        },
+    }
+    data = graphql_request(connection, query, variables)
+    result = data.get("findScenes", {})
+    return result.get("scenes", []), result.get("count", 0)
+
+
+def find_images_by_tag(connection, tag_id, page=1, per_page=100):
+    """Find images tagged with a specific tag."""
+    query = """
+    query FindImages($filter: FindFilterType, $image_filter: ImageFilterType) {
+        findImages(filter: $filter, image_filter: $image_filter) {
+            count
+            images {
+                id
+                title
+                details
+                visual_files { ... on ImageFile { path } }
+                studio { id name }
+                tags { id name }
+                performers { id name }
+            }
+        }
+    }
+    """
+    variables = {
+        "filter": {"page": page, "per_page": per_page},
+        "image_filter": {
+            "tags": {
+                "value": [tag_id],
+                "modifier": "INCLUDES",
+                "depth": 0,
+            }
+        },
+    }
+    data = graphql_request(connection, query, variables)
+    result = data.get("findImages", {})
+    return result.get("images", []), result.get("count", 0)
+
+
 def find_unprocessed_scenes(connection, processed_tag_id, page=1, per_page=100):
     """Find scenes NOT tagged with the processed tag."""
     query = """
@@ -225,6 +293,7 @@ def find_unprocessed_scenes(connection, processed_tag_id, page=1, per_page=100):
                 files { path duration }
                 studio { id name }
                 tags { id name }
+                performers { id name }
             }
         }
     }
@@ -257,6 +326,7 @@ def find_unprocessed_images(connection, processed_tag_id, page=1, per_page=100):
                 visual_files { ... on ImageFile { path } }
                 studio { id name }
                 tags { id name }
+                performers { id name }
             }
         }
     }
@@ -285,6 +355,7 @@ def get_scene(connection, scene_id):
             files { path duration }
             studio { id name }
             tags { id name }
+                performers { id name }
         }
     }
     """
@@ -301,6 +372,7 @@ def get_image(connection, image_id):
             visual_files { ... on ImageFile { path } }
             studio { id name }
             tags { id name }
+                performers { id name }
         }
     }
     """
@@ -308,8 +380,34 @@ def get_image(connection, image_id):
     return data.get("findImage")
 
 
-def update_scene(connection, scene_id, tag_ids, studio_id=None, details=None):
-    """Update a scene — set tags and optionally studio / details."""
+def find_performers_by_url(connection, username):
+    """
+    Find performers whose URLs contain the given username.
+
+    Searches across all performer URLs for the username string so that
+    URLs like tiktok.com/@jazmynmajors or instagram.com/jazmynmajors
+    will match the username 'jazmynmajors'.
+    """
+    query = """
+    query FindPerformers($filter: FindFilterType, $performer_filter: PerformerFilterType) {
+        findPerformers(filter: $filter, performer_filter: $performer_filter) {
+            performers { id name urls }
+        }
+    }
+    """
+    variables = {
+        "filter": {"per_page": 10},
+        "performer_filter": {
+            "url": {"value": username, "modifier": "INCLUDES"},
+        },
+    }
+    data = graphql_request(connection, query, variables)
+    return data.get("findPerformers", {}).get("performers", [])
+
+
+def update_scene(connection, scene_id, tag_ids, studio_id=None, details=None,
+                 performer_ids=None):
+    """Update a scene — set tags and optionally studio / details / performers."""
     mutation = """
     mutation SceneUpdate($input: SceneUpdateInput!) {
         sceneUpdate(input: $input) { id }
@@ -320,11 +418,14 @@ def update_scene(connection, scene_id, tag_ids, studio_id=None, details=None):
         inp["studio_id"] = studio_id
     if details is not None:
         inp["details"] = details
+    if performer_ids is not None:
+        inp["performer_ids"] = performer_ids
     graphql_request(connection, mutation, {"input": inp})
 
 
-def update_image(connection, image_id, tag_ids, studio_id=None, details=None):
-    """Update an image — set tags and optionally studio / details."""
+def update_image(connection, image_id, tag_ids, studio_id=None, details=None,
+                 performer_ids=None):
+    """Update an image — set tags and optionally studio / details / performers."""
     mutation = """
     mutation ImageUpdate($input: ImageUpdateInput!) {
         imageUpdate(input: $input) { id }
@@ -335,6 +436,8 @@ def update_image(connection, image_id, tag_ids, studio_id=None, details=None):
         inp["studio_id"] = studio_id
     if details is not None:
         inp["details"] = details
+    if performer_ids is not None:
+        inp["performer_ids"] = performer_ids
     graphql_request(connection, mutation, {"input": inp})
 
 
@@ -659,6 +762,11 @@ def _existing_tag_ids(item):
     return {t["id"] for t in (item.get("tags") or [])}
 
 
+def _existing_performer_ids(item):
+    """Return set of performer IDs already on a scene or image."""
+    return {p["id"] for p in (item.get("performers") or [])}
+
+
 def process_scene(connection, scene, studio_cache, processed_tag_id, dry_run=False):
     """
     Analyze a scene: detect platform, extract username, update Stash.
@@ -722,20 +830,46 @@ def process_scene(connection, scene, studio_cache, processed_tag_id, dry_run=Fal
     elif username:
         log_debug(f"  → Username @{username} (details already has marker)")
 
+    # Performer matching — find performers whose URLs contain the username
+    performer_ids = None
+    matched_performers = []
+    if username:
+        existing = _existing_performer_ids(scene)
+        matches = find_performers_by_url(connection, username)
+        new_ids = {p["id"] for p in matches} - existing
+        if new_ids:
+            performer_ids = list(existing | new_ids)
+            matched_performers = [
+                p["name"] for p in matches if p["id"] in new_ids
+            ]
+            log_info(
+                f"  → Linked performer(s): {', '.join(matched_performers)}"
+            )
+
     if dry_run:
         parts = []
         if platform:
             parts.append(f"platform={platform}")
         if username:
             parts.append(f"username=@{username}")
+        if matched_performers:
+            parts.append(f"performers={','.join(matched_performers)}")
         return ", ".join(parts) if parts else "nothing_detected"
 
     # Apply updates
-    update_scene(connection, scene_id, tag_ids, studio_id=studio_id, details=new_details)
+    update_scene(
+        connection, scene_id, tag_ids,
+        studio_id=studio_id, details=new_details, performer_ids=performer_ids,
+    )
 
-    if platform or username:
-        return f"platform={platform or '?'}, username=@{username or '?'}"
-    return "nothing_detected"
+    parts = []
+    if platform:
+        parts.append(f"platform={platform}")
+    if username:
+        parts.append(f"username=@{username}")
+    if matched_performers:
+        parts.append(f"performers={','.join(matched_performers)}")
+    return ", ".join(parts) if parts else "nothing_detected"
 
 
 def process_image(connection, image, studio_cache, processed_tag_id, dry_run=False):
@@ -789,19 +923,45 @@ def process_image(connection, image, studio_cache, processed_tag_id, dry_run=Fal
         new_details = build_details(details, username)
         log_info(f"  → Username: @{username}")
 
+    # Performer matching
+    performer_ids = None
+    matched_performers = []
+    if username:
+        existing = _existing_performer_ids(image)
+        matches = find_performers_by_url(connection, username)
+        new_ids = {p["id"] for p in matches} - existing
+        if new_ids:
+            performer_ids = list(existing | new_ids)
+            matched_performers = [
+                p["name"] for p in matches if p["id"] in new_ids
+            ]
+            log_info(
+                f"  → Linked performer(s): {', '.join(matched_performers)}"
+            )
+
     if dry_run:
         parts = []
         if platform:
             parts.append(f"platform={platform}")
         if username:
             parts.append(f"username=@{username}")
+        if matched_performers:
+            parts.append(f"performers={','.join(matched_performers)}")
         return ", ".join(parts) if parts else "nothing_detected"
 
-    update_image(connection, image_id, tag_ids, studio_id=studio_id, details=new_details)
+    update_image(
+        connection, image_id, tag_ids,
+        studio_id=studio_id, details=new_details, performer_ids=performer_ids,
+    )
 
-    if platform or username:
-        return f"platform={platform or '?'}, username=@{username or '?'}"
-    return "nothing_detected"
+    parts = []
+    if platform:
+        parts.append(f"platform={platform}")
+    if username:
+        parts.append(f"username=@{username}")
+    if matched_performers:
+        parts.append(f"performers={','.join(matched_performers)}")
+    return ", ".join(parts) if parts else "nothing_detected"
 
 
 # ---------------------------------------------------------------------------
@@ -898,6 +1058,143 @@ def mode_batch(connection, dry_run=False):
     return msg
 
 
+def mode_tagged(connection, dry_run=False):
+    """Process scenes/images tagged with the queue tag, then remove it."""
+    label = "DRY RUN" if dry_run else "EXTRACT"
+    log_info(f"=== Username Extractor — Tagged Queue ({label}) ===")
+
+    queue_tag_id = find_or_create_tag(connection, QUEUE_TAG)
+    processed_tag_id = find_or_create_tag(connection, PROCESSED_TAG)
+    studio_cache = {}
+
+    stats = {"detected": 0, "not_detected": 0, "errors": 0, "total": 0}
+
+    # --- Scenes ---
+    page = 1
+    total_scenes = None
+    while True:
+        scenes, count = find_scenes_by_tag(connection, queue_tag_id, page=page)
+        if total_scenes is None:
+            total_scenes = count
+            log_info(f"Queued scenes: {count}")
+        if not scenes:
+            break
+
+        for scene in scenes:
+            stats["total"] += 1
+            try:
+                result = process_scene(
+                    connection, scene, studio_cache, processed_tag_id, dry_run,
+                )
+                if "nothing_detected" in result or "no_files" in result:
+                    stats["not_detected"] += 1
+                elif "file_missing" in result:
+                    stats["errors"] += 1
+                else:
+                    stats["detected"] += 1
+
+                # Remove queue tag, keep processed tag (already added by process_scene)
+                if not dry_run:
+                    new_tags = (_existing_tag_ids(scene) | {processed_tag_id}) - {queue_tag_id}
+                    update_scene(connection, scene["id"], list(new_tags))
+
+            except Exception as exc:
+                log_error(f"Error processing scene {scene['id']}: {exc}")
+                stats["errors"] += 1
+
+        # Re-fetch page 1 since we're removing the queue tag
+        if not dry_run:
+            page = 1
+        else:
+            page += 1
+
+    # --- Images ---
+    page = 1
+    total_images = None
+    while True:
+        images, count = find_images_by_tag(connection, queue_tag_id, page=page)
+        if total_images is None:
+            total_images = count
+            log_info(f"Queued images: {count}")
+        if not images:
+            break
+
+        for image in images:
+            stats["total"] += 1
+            try:
+                result = process_image(
+                    connection, image, studio_cache, processed_tag_id, dry_run,
+                )
+                if "nothing_detected" in result or "no_files" in result:
+                    stats["not_detected"] += 1
+                elif "file_missing" in result:
+                    stats["errors"] += 1
+                else:
+                    stats["detected"] += 1
+
+                if not dry_run:
+                    new_tags = (_existing_tag_ids(image) | {processed_tag_id}) - {queue_tag_id}
+                    update_image(connection, image["id"], list(new_tags))
+
+            except Exception as exc:
+                log_error(f"Error processing image {image['id']}: {exc}")
+                stats["errors"] += 1
+
+        if not dry_run:
+            page = 1
+        else:
+            page += 1
+
+    msg = (
+        f"Done: {stats['detected']} detected, "
+        f"{stats['not_detected']} no match, "
+        f"{stats['errors']} errors "
+        f"({stats['total']} total)"
+    )
+    log_info(msg)
+    return msg
+
+
+def mode_single_scene(connection, scene_id, dry_run=False):
+    """Process a single scene by ID."""
+    label = "DRY RUN" if dry_run else "EXTRACT"
+    log_info(f"=== Single Scene {scene_id} ({label}) ===")
+
+    scene = get_scene(connection, scene_id)
+    if not scene:
+        msg = f"Scene {scene_id} not found"
+        log_error(msg)
+        return msg
+
+    processed_tag_id = find_or_create_tag(connection, PROCESSED_TAG)
+    studio_cache = {}
+
+    result = process_scene(connection, scene, studio_cache, processed_tag_id, dry_run)
+    msg = f"Scene {scene_id}: {result}"
+    log_info(msg)
+    return msg
+
+
+def mode_single_image(connection, image_id, dry_run=False):
+    """Process a single image by ID."""
+    label = "DRY RUN" if dry_run else "EXTRACT"
+    log_info(f"=== Single Image {image_id} ({label}) ===")
+
+    image = get_image(connection, image_id)
+    if not image:
+        msg = f"Image {image_id} not found"
+        log_error(msg)
+        return msg
+
+    processed_tag_id = find_or_create_tag(connection, PROCESSED_TAG)
+    studio_cache = {}
+
+    result = process_image(connection, image, studio_cache, processed_tag_id, dry_run)
+    msg = f"Image {image_id}: {result}"
+    log_info(msg)
+    return msg
+
+
 def mode_hook(connection, hook_context):
     """Handle a Scene.Create.Post or Image.Create.Post hook."""
     hook_type = hook_context.get("type", "")
@@ -967,6 +1264,22 @@ def main():
             result = mode_batch(connection, dry_run=True)
         elif mode == "extract":
             result = mode_batch(connection, dry_run=False)
+        elif mode == "tagged":
+            result = mode_tagged(connection, dry_run=False)
+        elif mode == "single_scene":
+            scene_id = args.get("scene_id", "")
+            if not scene_id:
+                result = "No scene_id provided"
+                log_error(result)
+            else:
+                result = mode_single_scene(connection, scene_id)
+        elif mode == "single_image":
+            image_id = args.get("image_id", "")
+            if not image_id:
+                result = "No image_id provided"
+                log_error(result)
+            else:
+                result = mode_single_image(connection, image_id)
         else:
             result = f"Unknown mode: {mode}"
             log_error(result)

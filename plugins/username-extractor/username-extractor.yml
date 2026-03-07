@@ -6,6 +6,9 @@ exec:
   - python3
   - "{pluginDir}/username_extractor.py"
 interface: raw
+ui:
+  javascript:
+    - username_extractor_ui.js
 hooks:
   - name: "Extract Username on Scene Create"
     description: "Automatically detect platform and extract username when a new scene is created"
@@ -24,3 +27,15 @@ tasks:
     description: "Show what would be detected without modifying anything."
     defaultArgs:
       mode: scan
+  - name: "Process Tagged (ocr:queue)"
+    description: "Process scenes/images tagged with 'ocr:queue'. Select items → bulk edit → add tag 'ocr:queue' → run this task. The trigger tag is removed after processing."
+    defaultArgs:
+      mode: tagged
+  - name: "Process Single Scene"
+    description: "Process a single scene by ID. Trigger via GraphQL API with scene_id arg."
+    defaultArgs:
+      mode: single_scene
+  - name: "Process Single Image"
+    description: "Process a single image by ID. Trigger via GraphQL API with image_id arg."
+    defaultArgs:
+      mode: single_image
