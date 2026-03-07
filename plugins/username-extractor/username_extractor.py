@@ -494,25 +494,26 @@ def _run_ffmpeg(args):
 
 
 def extract_frame(video_path, timestamp, output_path):
-    """Extract a single frame from a video."""
+    """Extract a single frame from a video, upscaled 2x for better OCR."""
     return _run_ffmpeg([
         "-ss", str(timestamp), "-i", video_path,
-        "-frames:v", "1", "-q:v", "2", output_path,
+        "-frames:v", "1", "-vf", "scale=iw*2:ih*2:flags=lanczos",
+        "-q:v", "2", output_path,
     ]) and os.path.exists(output_path)
 
 
 def extract_frame_negated(video_path, timestamp, output_path):
-    """Extract a frame with colours negated."""
+    """Extract a frame with colours negated, upscaled 2x."""
     return _run_ffmpeg([
         "-ss", str(timestamp), "-i", video_path,
-        "-frames:v", "1", "-vf", "format=gray,negate",
+        "-frames:v", "1", "-vf", "scale=iw*2:ih*2:flags=lanczos,format=gray,negate",
         "-q:v", "2", output_path,
     ]) and os.path.exists(output_path)
 
 
 def extract_frame_threshold(video_path, timestamp, output_path, threshold=200):
-    """Extract a frame with white-text isolation (bright → black on white)."""
-    vf = f"geq=lum='if(gt(lum(X,Y),{threshold}),0,255)'"
+    """Extract a frame with white-text isolation, upscaled 2x."""
+    vf = f"scale=iw*2:ih*2:flags=lanczos,geq=lum='if(gt(lum(X,Y),{threshold}),0,255)'"
     return _run_ffmpeg([
         "-ss", str(timestamp), "-i", video_path,
         "-frames:v", "1", "-vf", vf,
@@ -521,8 +522,8 @@ def extract_frame_threshold(video_path, timestamp, output_path, threshold=200):
 
 
 def threshold_image(input_path, output_path, threshold=200):
-    """Apply white-text threshold to an existing image."""
-    vf = f"geq=lum='if(gt(lum(X,Y),{threshold}),0,255)'"
+    """Apply white-text threshold to an existing image, upscaled 2x."""
+    vf = f"scale=iw*2:ih*2:flags=lanczos,geq=lum='if(gt(lum(X,Y),{threshold}),0,255)'"
     return _run_ffmpeg([
         "-i", input_path, "-vf", vf,
         "-pix_fmt", "gray", "-update", "1", "-frames:v", "1", output_path,
