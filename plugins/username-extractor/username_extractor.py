@@ -703,6 +703,47 @@ def find_usernames_in_text(text):
 # Core extraction logic
 # ---------------------------------------------------------------------------
 
+IG_LIVE_KEYWORDS = ["ao vivo", "in diretta", "en vivo", "en direct"]
+
+
+def _find_host_username_near_badge(text):
+    """
+    Find the Instagram Live host username — the one near the live badge.
+
+    In IG Live, the host's username appears on the same line or within
+    a few lines of the "AO VIVO" / "In diretta" badge.  Chat commenters
+    appear further down.  Return a set of usernames found near the badge.
+    """
+    lines = text.split("\n")
+    badge_indices = []
+    lower_text = text.lower()
+    for kw in IG_LIVE_KEYWORDS:
+        if kw not in lower_text:
+            continue
+        for i, line in enumerate(lines):
+            if kw in line.lower():
+                badge_indices.append(i)
+
+    if not badge_indices:
+        return set()
+
+    # Look within ±5 non-blank lines of any badge for usernames.
+    # OCR often inserts many blank lines between visually adjacent elements,
+    # so we use a generous raw-line window (±8) to compensate.
+    nearby_usernames = set()
+    for bi in badge_indices:
+        window = lines[max(0, bi - 8) : bi + 9]
+        window_text = "\n".join(window)
+        for username, _score in find_usernames_in_text(window_text):
+            nearby_usernames.add(username)
+
+    return nearby_usernames
+
+
+# Score boost for the IG Live host username (found near badge)
+IG_HOST_BOOST = 30
+
+
 def _ocr_and_collect(image_path, platform_votes, username_votes, label, psm=3):
     """OCR one image variant, accumulate platform + username votes."""
     text = ocr_image(image_path, psm=psm)
@@ -714,6 +755,12 @@ def _ocr_and_collect(image_path, platform_votes, username_votes, label, psm=3):
 
     for username, score in find_usernames_in_text(text):
         username_votes[username] += score
+
+    # Boost usernames found near an Instagram Live badge so the host
+    # outscores chat commenters who appear many times.
+    host_names = _find_host_username_near_badge(text)
+    for name in host_names:
+        username_votes[name] += IG_HOST_BOOST
 
 
 def analyze_video(video_path, duration):
