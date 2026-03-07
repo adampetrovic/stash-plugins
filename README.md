@@ -15,6 +15,7 @@ https://adampetrovic.github.io/stash-plugins/main/index.yml
 | Plugin | Description |
 |--------|-------------|
 | [HEIC to JPEG Converter](plugins/heic-converter/) | Converts HEIC/HEIF images to full quality JPEG using ImageMagick |
+| [Username Extractor](plugins/username-extractor/) | Extracts watermarked TikTok/Instagram usernames from videos via OCR |
 
 ## License
 

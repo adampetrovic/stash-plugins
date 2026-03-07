@@ -1,0 +1,26 @@
+name: Username Extractor
+description: Scans all scenes/images via OCR to detect the source platform (TikTok/Instagram), set the studio, and extract watermarked usernames into the details field for searchability.
+version: 1.0.0
+url: https://github.com/adampetrovic/stash-plugins
+exec:
+  - python3
+  - "{pluginDir}/username_extractor.py"
+interface: raw
+hooks:
+  - name: "Extract Username on Scene Create"
+    description: "Automatically detect platform and extract username when a new scene is created"
+    triggeredBy:
+      - Scene.Create.Post
+  - name: "Extract Username on Image Create"
+    description: "Automatically detect platform and extract username when a new image is created"
+    triggeredBy:
+      - Image.Create.Post
+tasks:
+  - name: "Extract Usernames"
+    description: "Process all unscanned scenes and images — detect platform, set studio, extract usernames. Items are tagged 'auto:ocr' to avoid re-processing."
+    defaultArgs:
+      mode: extract
+  - name: "Dry Run - Scan for Usernames"
+    description: "Show what would be detected without modifying anything."
+    defaultArgs:
+      mode: scan
