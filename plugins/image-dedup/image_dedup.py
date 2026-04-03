@@ -76,7 +76,33 @@ def log_progress(value):
 # GraphQL helper
 # ---------------------------------------------------------------------------
 
+def _read_api_key():
+    """Read Stash API key from config.yml if available."""
+    config_paths = [
+        os.path.join(os.environ.get("STASH_METADATA", ""), "config.yml"),
+        os.path.expanduser("~/.stash/config.yml"),
+        "/root/.stash/config.yml",
+    ]
+    for path in config_paths:
+        if path and os.path.exists(path):
+            try:
+                with open(path) as f:
+                    for line in f:
+                        line = line.strip()
+                        if line.startswith("api_key:"):
+                            return line.split(":", 1)[1].strip().strip('"').strip("'")
+            except OSError:
+                pass
+    return None
+
+
+# Cache the API key so we only read config once
+_API_KEY = None
+
+
 def graphql_request(connection, query, variables=None):
+    global _API_KEY
+
     scheme = connection.get("Scheme", "http")
     port = connection.get("Port", 9999)
     url = f"{scheme}://localhost:{port}/graphql"
@@ -88,9 +114,15 @@ def graphql_request(connection, query, variables=None):
         "Accept": "application/json",
     }
 
-    cookie = connection.get("SessionCookie")
-    if cookie and cookie.get("Value"):
-        headers["Cookie"] = f"{cookie['Name']}={cookie['Value']}"
+    # Prefer API key (doesn't expire) over session cookie
+    if _API_KEY is None:
+        _API_KEY = _read_api_key() or ""
+    if _API_KEY:
+        headers["ApiKey"] = _API_KEY
+    else:
+        cookie = connection.get("SessionCookie")
+        if cookie and cookie.get("Value"):
+            headers["Cookie"] = f"{cookie['Name']}={cookie['Value']}"
 
     req = urllib.request.Request(url, data=payload, headers=headers)
 
