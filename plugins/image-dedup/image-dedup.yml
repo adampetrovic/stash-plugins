@@ -1,0 +1,34 @@
+name: Image Deduplication
+description: Finds duplicate and near-duplicate images using perceptual hashing. Supports batch scanning, automatic detection on import, and duplicate resolution with metadata merging.
+version: 1.0.0
+url: https://github.com/adampetrovic/stash-plugins
+exec:
+  - python3
+  - "{pluginDir}/image_dedup.py"
+interface: raw
+hooks:
+  - name: "Fingerprint on Image Create"
+    description: "Automatically fingerprint new images and check for duplicates when added via scan"
+    triggeredBy:
+      - Image.Create.Post
+tasks:
+  - name: "Find Duplicates"
+    description: "Scan all un-fingerprinted images, generate perceptual hashes, and identify duplicate groups. Previously fingerprinted images are skipped."
+    defaultArgs:
+      mode: scan
+  - name: "Dry Run - Find Duplicates"
+    description: "Preview duplicate detection results without creating tags or modifying any data."
+    defaultArgs:
+      mode: dry_run
+  - name: "Resolve Duplicates"
+    description: "Process all unresolved duplicate groups: keep highest resolution image, merge metadata (performers, tags, ratings, galleries), delete lower-quality duplicates."
+    defaultArgs:
+      mode: resolve
+  - name: "Dry Run - Resolve Duplicates"
+    description: "Preview what the resolve task would do: show keeper selection and metadata merge plan for each group without making changes."
+    defaultArgs:
+      mode: resolve_dry_run
+  - name: "Cleanup"
+    description: "Remove orphaned fingerprints (images deleted from Stash), empty duplicate groups, and single-member group tags."
+    defaultArgs:
+      mode: cleanup
