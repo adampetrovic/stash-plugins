@@ -341,6 +341,20 @@ def init_db(db_path):
     return conn
 
 
+def _to_signed64(val):
+    """Convert unsigned 64-bit int to signed for SQLite storage."""
+    if val >= (1 << 63):
+        val -= (1 << 64)
+    return val
+
+
+def _to_unsigned64(val):
+    """Convert signed 64-bit int back to unsigned for hash operations."""
+    if val < 0:
+        val += (1 << 64)
+    return val
+
+
 def upsert_fingerprint(db, image_id, file_hash, dhash_full, dhash_crop,
                         width=None, height=None, file_size=None):
     """Insert or replace a fingerprint record."""
@@ -348,32 +362,39 @@ def upsert_fingerprint(db, image_id, file_hash, dhash_full, dhash_crop,
         """INSERT OR REPLACE INTO fingerprints
            (image_id, file_hash, dhash_full, dhash_crop, width, height, file_size)
            VALUES (?, ?, ?, ?, ?, ?, ?)""",
-        (image_id, file_hash, dhash_full, dhash_crop, width, height, file_size),
+        (image_id, file_hash, _to_signed64(dhash_full),
+         _to_signed64(dhash_crop), width, height, file_size),
     )
     db.commit()
 
 
 def get_all_fingerprints(db):
     """Return all fingerprints as list of (image_id, file_hash, dhash_full, dhash_crop)."""
-    return db.execute(
+    rows = db.execute(
         "SELECT image_id, file_hash, dhash_full, dhash_crop FROM fingerprints"
     ).fetchall()
+    return [(r[0], r[1], _to_unsigned64(r[2]), _to_unsigned64(r[3])) for r in rows]
 
 
 def get_all_fingerprints_full(db):
     """Return all fingerprints with dimension data."""
-    return db.execute(
+    rows = db.execute(
         "SELECT image_id, file_hash, dhash_full, dhash_crop, width, height, file_size "
         "FROM fingerprints"
     ).fetchall()
+    return [(r[0], r[1], _to_unsigned64(r[2]), _to_unsigned64(r[3]),
+             r[4], r[5], r[6]) for r in rows]
 
 
 def get_fingerprint(db, image_id):
     """Get a single fingerprint by image ID."""
-    return db.execute(
+    row = db.execute(
         "SELECT image_id, file_hash, dhash_full, dhash_crop FROM fingerprints WHERE image_id=?",
         (image_id,),
     ).fetchone()
+    if row is None:
+        return None
+    return (row[0], row[1], _to_unsigned64(row[2]), _to_unsigned64(row[3]))
 
 
 def get_next_group_number(db):
